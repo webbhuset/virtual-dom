@@ -1,11 +1,11 @@
 module VirtualDom.Helpers exposing
   ( Node
-  , text, node, div, span, a, h1
+  , text, node, div, span, a, h1, input
   , Property, property, attribute
-  , class, id, href
+  , class, id, href, value, placeholder
   , style
   , on, onWithOptions, Options, defaultOptions
-  , onClick
+  , onClick, onInput
   , map
   , lazy, lazy2, lazy3
   , keyedNode
@@ -50,6 +50,11 @@ h1 =
   node "h1"
 
 
+input : List (Property msg) -> List (Node msg) -> Node msg
+input =
+  node "input"
+
+
 map : (a -> msg) -> Node a -> Node msg
 map =
   Native.VirtualDom.map
@@ -83,6 +88,16 @@ id =
   attribute "id"
 
 
+value : String -> Property msg
+value =
+  attribute "value"
+
+
+placeholder : String -> Property msg
+placeholder =
+  attribute "placeholder"
+
+
 style : List (String, String) -> Property msg
 style =
   Native.VirtualDom.style
@@ -96,6 +111,16 @@ on eventName decoder =
 onClick : msg -> Property msg
 onClick msg =
   on "click" (Decode.succeed msg)
+
+
+onInput : (String -> msg) -> Property msg
+onInput tagger =
+  on "input" (Decode.map tagger targetValue)
+
+
+targetValue : Decode.Decoder String
+targetValue =
+  Decode.at ["target", "value"] Decode.string
 
 
 onWithOptions : String -> Options -> Decode.Decoder msg -> Property msg
@@ -134,4 +159,3 @@ lazy3 =
 keyedNode : String -> List (Property msg) -> List ( String, Node msg ) -> Node msg
 keyedNode =
   Native.VirtualDom.keyedNode
-

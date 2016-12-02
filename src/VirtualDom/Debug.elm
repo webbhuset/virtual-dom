@@ -45,6 +45,7 @@ type alias Model model msg =
   { history : History model msg
   , state : State model
   , expando : Expando
+  , query : String
   , metadata : Result Metadata.Error Metadata
   , overlay : Overlay.State
   , isDebuggerOpen : Bool
@@ -61,6 +62,7 @@ wrapInit metadata ( userModel, userCommands ) =
   { history = History.empty userModel
   , state = Running userModel
   , expando = Expando.init userModel
+  , query = ""
   , metadata = Metadata.decode metadata
   , overlay = Overlay.none
   , isDebuggerOpen = False
@@ -76,6 +78,7 @@ type Msg msg
   = NoOp
   | UserMsg msg
   | ExpandoMsg Expando.Msg
+  | InputQuery String
   | Resume
   | Jump Int
   | Open
@@ -111,6 +114,9 @@ wrapUpdate userUpdate scrollTask msg model =
           | expando = Expando.update eMsg model.expando
       }
         ! []
+
+    InputQuery query ->
+      { model | query = query } ! []
 
     Resume ->
       case model.state of
@@ -385,15 +391,30 @@ overlayConfig =
 
 
 viewOut : Model model msg -> Node (Msg msg)
-viewOut { history, state, expando } =
+viewOut { history, state, expando, query } =
   VDom.div
     [ VDom.id "debugger" ]
     [ styles
     , viewSidebar state history
+    , viewQuery query
     , VDom.map ExpandoMsg <|
-        VDom.div [ VDom.id "values" ] [ Expando.view Nothing expando ]
+        VDom.div
+          [ VDom.id "values" ]
+          ( Expando.viewFilteredByQuery query expando )
     ]
 
+
+viewQuery : String -> Node (Msg msg)
+viewQuery query =
+  VDom.div [ VDom.class "debugger-query" ]
+    [ VDom.input
+        [ VDom.class "debugger-query-input"
+        , VDom.value query
+        , VDom.placeholder ""
+        , VDom.onInput InputQuery
+        ] []
+    ]
+    
 
 viewSidebar : State model -> History model msg -> Node (Msg msg)
 viewSidebar state history =
@@ -527,6 +548,25 @@ body {
   width: 100%;
   overflow-y: auto;
   height: calc(100% - 54px);
+}
+
+.debugger-query {
+  float: left;
+  width: calc(100% - 30ch);
+}
+
+.debugger-query-input {
+  width: 100%;
+  margin-bottom: 5px;
+}
+
+.debugger-expando-block {
+  margin-bottom: 10px;
+}
+
+.debugger-expando-link {
+  color: #aaa;
+  margin-left: 3px;
 }
 
 .messages-entry {

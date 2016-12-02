@@ -3,7 +3,7 @@ module VirtualDom.Expando exposing
   , init
   , merge
   , Msg, update
-  , view
+  , view, viewFilteredByQuery
   )
 
 
@@ -256,6 +256,184 @@ updateField msg maybeExpando =
 
     Just expando ->
       Just (update msg expando)
+
+
+
+-- VIEW (WITH QUERY)
+
+
+viewFilteredByQuery : String -> Expando -> List (Node Msg)
+viewFilteredByQuery query expando =
+  if String.trim query == "" then
+    [ view Nothing expando ]
+  else if String.left 1 query == "." then
+    viewFilteredById (String.split "." <| String.dropLeft 1 query) expando
+      |> Maybe.withDefault (text "")
+      |> (\x -> [ x ])
+  else
+    viewFilteredByKey "" query expando
+
+
+viewFilteredByKey : String -> String -> Expando -> List (Node Msg)
+viewFilteredByKey parentId query expando =
+  case expando of
+    Sequence seqType isClosed items ->
+      items
+        |> List.indexedMap (,)
+        |> List.concatMap
+          (\(index, item) ->
+            viewFilteredByKey (parentId ++ "." ++ toString index) query item
+              |> List.map (VDom.map (Index Value index))
+          )
+
+    Dictionary _ keyValuePairs ->
+      keyValuePairs
+        |> List.indexedMap (,)
+        |> List.concatMap
+          (\(index, (key, value)) ->
+            if String.contains query (toString key) then
+              [ viewWithId (parentId ++ "." ++ toString key) value |> VDom.map (Index Value index) ]
+            else
+              viewFilteredByKey (parentId ++ "." ++ toString key) query value
+                |> List.map (VDom.map (Index Value index))
+          )
+
+    Record _ entries ->
+      entries
+        |> Dict.toList
+        |> List.concatMap
+          (\(key, value) ->
+            if String.contains query key then
+              [ viewWithId (parentId ++ "." ++ key) value |> VDom.map (Field key) ]
+            else
+              viewFilteredByKey (parentId ++ "." ++ key) query value
+                |> List.map (VDom.map (Field key))
+          )
+
+    Constructor _ _ valueList ->
+      valueList
+        |> List.indexedMap (,)
+        |> List.concatMap
+          (\(index, value) ->
+            viewFilteredByKey (parentId ++ "." ++ toString index) query value
+              |> List.map (VDom.map (Index None index))
+          )
+
+    _ ->
+      []
+
+
+viewFilteredById : List String -> Expando -> Maybe (Node Msg)
+viewFilteredById query expando =
+  case (query, expando) of
+    (q :: tail, Sequence seqType isClosed items) ->
+      case String.toInt q of
+        Ok i ->
+          items
+            |> (List.drop i >> List.head)
+            |> Maybe.andThen (\expando ->
+                viewFilteredById tail expando |> Maybe.map (VDom.map (Index Value i))
+              )
+
+        Err _ ->
+          Nothing
+
+    (q :: tail, Dictionary isClosed keyValuePairs) ->
+      keyValuePairs
+        |> List.indexedMap (,)
+        |> findMap (\(index, (key, value)) -> if matchWithComparable q key then Just (index, value) else Nothing)
+        |> Maybe.andThen (\(index, value) ->
+            viewFilteredById tail value |> Maybe.map (VDom.map (Index Value index))
+          )
+
+    (q :: tail, Record isClosed entries) ->
+      Dict.toList entries
+        |> findMap (\(key, value) -> if q == key then Just (key, value) else Nothing)
+        |> Maybe.andThen (\(key, value) ->
+            viewFilteredById tail value |> Maybe.map (VDom.map (Field key))
+          )
+
+    (q :: tail, Constructor _ _ values) ->
+      case String.toInt q of
+        Ok i ->
+          values
+            |> (List.drop i >> List.head)
+            |> Maybe.andThen (\expando ->
+                viewFilteredById tail expando |> Maybe.map (VDom.map (Index None i))
+              )
+
+        Err _ ->
+          Nothing
+
+    (_ :: _, _) ->
+      Nothing
+
+    ([], _) ->
+      Just (view Nothing expando)
+
+
+matchWithComparable : String -> Expando -> Bool
+matchWithComparable query expando =
+  case expando of
+    S stringRep ->
+      query == stringRep
+
+    Primitive stringRep ->
+      query == stringRep
+
+    Sequence seqType isClosed items ->
+      if String.left 1 query == "[" then
+        let
+          innerQueries =
+            (String.dropLeft 1 >> String.dropRight 1 >> String.split ",") query
+        in
+          matchWithComparableMany innerQueries items
+      else
+        False
+
+    Constructor Nothing _ valueList ->
+      if String.left 1 query == "(" then
+        let
+          innerQueries =
+            (String.dropLeft 1 >> String.dropRight 1 >> String.split ",") query
+        in
+          matchWithComparableMany innerQueries valueList
+      else
+        False
+
+    _ ->
+      False
+
+
+matchWithComparableMany : List String -> List Expando -> Bool
+matchWithComparableMany queries expandos =
+  case (queries, expandos) of
+    ([], []) ->
+      True
+
+    (q :: qs, e :: es) ->
+      matchWithComparable q e && matchWithComparableMany qs es
+
+    _ ->
+      False
+
+
+findMap : (a -> Maybe b) -> List a -> Maybe b
+findMap f list =
+  case list of
+    [] -> Nothing
+    x :: xs ->
+      case f x of
+        Just y -> Just y
+        _ -> findMap f xs
+
+
+viewWithId : String -> Expando -> Node Msg
+viewWithId id expando =
+  VDom.div [ VDom.class "debugger-expando-block" ]
+    [ VDom.div [ VDom.class "debugger-expando-link" ] [ VDom.text id ]
+    , view Nothing expando
+    ]
 
 
 
