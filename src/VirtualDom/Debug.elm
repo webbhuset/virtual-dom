@@ -3,6 +3,7 @@ module VirtualDom.Debug exposing (wrap, wrapWithFlags)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Task exposing (Task)
+import Time exposing (Time)
 import Native.Debug
 import Native.VirtualDom
 import VirtualDom.Expando as Expando exposing (Expando)
@@ -53,7 +54,7 @@ type alias Model model msg =
 
 type State model
   = Running model
-  | Paused Int model model
+  | Paused History.Address model model
 
 
 wrapInit : Encode.Value -> ( model, Cmd msg ) -> ( Model model msg, Cmd (Msg msg) )
@@ -75,13 +76,16 @@ wrapInit metadata ( userModel, userCommands ) =
 type Msg msg
   = NoOp
   | UserMsg msg
+  | UserMsgWithTimestamp msg Time
   | ExpandoMsg Expando.Msg
   | Resume
-  | Jump Int
+  | Jump History.Address
   | Open
   | Close
   | Up
   | Down
+  | Left
+  | Right
   | Import
   | Export
   | Upload String
@@ -104,7 +108,10 @@ wrapUpdate userUpdate scrollTask msg model =
       model ! []
 
     UserMsg userMsg ->
-      updateUserMsg userUpdate scrollTask userMsg model
+      model ! [ Time.now |> Task.perform (UserMsgWithTimestamp userMsg) ]
+
+    UserMsgWithTimestamp userMsg timestamp ->
+      updateUserMsg userUpdate scrollTask timestamp userMsg model
 
     ExpandoMsg eMsg ->
       { model
@@ -142,30 +149,59 @@ wrapUpdate userUpdate scrollTask msg model =
       { model | isDebuggerOpen = False } ! []
 
     Up ->
-      let
-        index =
-          case model.state of
-            Paused index _ _ ->
-              index
+      case model.state of
+        Paused address _ _ ->
+          case History.visibleAddressBefore address model.history of
+            Just nextIndex ->
+              wrapUpdate userUpdate scrollTask (Jump nextIndex) model
 
-            Running _ ->
-              History.size model.history
-      in
-        if index > 0 then
-          wrapUpdate userUpdate scrollTask (Jump (index - 1)) model
-        else
-          model ! []
+            Nothing ->
+              model ! []
+
+        Running _ ->
+          case History.latestAddress model.history of
+            Just nextIndex ->
+              wrapUpdate userUpdate scrollTask (Jump nextIndex) model
+
+            Nothing ->
+              model ! []
 
     Down ->
       case model.state of
         Running _ ->
           model ! []
 
-        Paused index _ userModel ->
-          if index == History.size model.history - 1 then
-            wrapUpdate userUpdate scrollTask Resume model
-          else
-            wrapUpdate userUpdate scrollTask (Jump (index + 1)) model
+        Paused address _ userModel ->
+          case History.visibleAddressAfter address model.history of
+            Nothing ->
+              wrapUpdate userUpdate scrollTask Resume model
+
+            Just nextAddress ->
+              wrapUpdate userUpdate scrollTask (Jump nextAddress) model
+
+    Left ->
+      case model.state of
+        Paused address _ _ ->
+          let
+            (history, nextAddress) =
+              History.closeGroup address model.history
+          in
+            wrapUpdate userUpdate scrollTask (Jump nextAddress) { model | history = history }
+
+        Running _ ->
+          model ! []
+
+    Right ->
+      case model.state of
+        Paused address _ _ ->
+          let
+            (history, nextAddress) =
+              History.openGroup address model.history
+          in
+            wrapUpdate userUpdate scrollTask (Jump nextAddress) { model | history = history }
+
+        Running _ ->
+          model ! []
 
     Import ->
       withGoodMetadata model <| \_ ->
@@ -271,16 +307,17 @@ loadNewHistory rawHistory userUpdate model =
 updateUserMsg
   : UserUpdate model msg
   -> Task Never ()
+  -> Time
   -> msg
   -> Model model msg
   -> (Model model msg, Cmd (Msg msg))
-updateUserMsg userUpdate scrollTask userMsg ({ history, state, expando } as model) =
+updateUserMsg userUpdate scrollTask timestamp userMsg ({ history, state, expando } as model) =
   let
     userModel =
       getLatestModel state
 
     newHistory =
-      History.add userMsg userModel history
+      History.add (Just timestamp) userMsg userModel history
 
     (newUserModel, userCmds) =
       userUpdate userMsg userModel
@@ -297,10 +334,10 @@ updateUserMsg userUpdate scrollTask userMsg ({ history, state, expando } as mode
         }
           ! [ commands, runIf model.isDebuggerOpen scrollTask ]
 
-      Paused index indexModel _ ->
+      Paused address indexModel _ ->
         { model
             | history = newHistory
-            , state = Paused index indexModel newUserModel
+            , state = Paused address indexModel newUserModel
         }
           ! [ commands ]
 
@@ -398,24 +435,24 @@ viewOut { history, state, expando } =
 viewSidebar : State model -> History model msg -> Node (Msg msg)
 viewSidebar state history =
   let
-    maybeIndex =
+    maybeAddress =
       case state of
         Running _ ->
           Nothing
 
-        Paused index _ _ ->
-          Just index
+        Paused address _ _ ->
+          Just address
   in
     VDom.div [ VDom.class "debugger-sidebar" ]
-      [ VDom.map Jump (History.view maybeIndex history)
-      , playButton maybeIndex
+      [ VDom.map Jump (History.view maybeAddress history)
+      , playButton maybeAddress
       ]
 
 
-playButton : Maybe Int -> Node (Msg msg)
-playButton maybeIndex =
+playButton : Maybe History.Address -> Node (Msg msg)
+playButton maybeAddress =
   VDom.div [ VDom.class "debugger-sidebar-controls" ]
-    [ viewResumeButton maybeIndex
+    [ viewResumeButton maybeAddress
     , VDom.div [ VDom.class "debugger-sidebar-controls-import-export" ]
         [ button Import "Import"
         , VDom.text " / "
@@ -432,8 +469,8 @@ button msg label =
     [ VDom.text label ]
 
 
-viewResumeButton maybeIndex =
-  case maybeIndex of
+viewResumeButton maybeAddress =
+  case maybeAddress of
     Nothing ->
       VDom.text ""
 
@@ -529,6 +566,35 @@ body {
   height: calc(100% - 54px);
 }
 
+.messages-group {
+  position: relative;
+}
+
+.messages-group-button {
+  width: 12px;
+  height: 12px;
+  left: 4px;
+  top: 7px;
+  text-align: center;
+  font-size: 10px;
+  color: #666;
+  position: absolute;
+  border: solid 1px #666;
+}
+
+.messages-group-button-text {
+  margin-top: -2px;
+}
+
+.messages-group-guide {
+  top: 26px;
+  left: 10px;
+  width: 5px;
+  border-left: solid 1px #666;
+  border-bottom: solid 1px #666;
+  position: absolute;
+}
+
 .messages-entry {
   cursor: pointer;
   width: 100%;
@@ -543,10 +609,10 @@ body {
 }
 
 .messages-entry-content {
-  width: calc(100% - 7ch);
+  width: calc(100% - 9ch);
   padding-top: 4px;
   padding-bottom: 4px;
-  padding-left: 1ch;
+  padding-left: 3ch;
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
