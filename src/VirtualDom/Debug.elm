@@ -86,6 +86,7 @@ type Msg msg
   | Down
   | Left
   | Right
+  | ToggleGroup Bool History.Address
   | Import
   | Export
   | Upload String
@@ -182,11 +183,7 @@ wrapUpdate userUpdate scrollTask msg model =
     Left ->
       case model.state of
         Paused address _ _ ->
-          let
-            (history, nextAddress) =
-              History.closeGroup address model.history
-          in
-            wrapUpdate userUpdate scrollTask (Jump nextAddress) { model | history = history }
+          wrapUpdate userUpdate scrollTask (ToggleGroup False address) model
 
         Running _ ->
           model ! []
@@ -194,14 +191,17 @@ wrapUpdate userUpdate scrollTask msg model =
     Right ->
       case model.state of
         Paused address _ _ ->
-          let
-            (history, nextAddress) =
-              History.openGroup address model.history
-          in
-            wrapUpdate userUpdate scrollTask (Jump nextAddress) { model | history = history }
+          wrapUpdate userUpdate scrollTask (ToggleGroup True address) model
 
         Running _ ->
           model ! []
+
+    ToggleGroup open address ->
+      let
+        (history, nextAddress) =
+          (if open then History.openGroup else History.closeGroup) address model.history
+      in
+        wrapUpdate userUpdate scrollTask (Jump nextAddress) { model | history = history }
 
     Import ->
       withGoodMetadata model <| \_ ->
@@ -442,9 +442,20 @@ viewSidebar state history =
 
         Paused address _ _ ->
           Just address
+
+    transform historyMsg =
+      case historyMsg of
+        History.Select address ->
+          Jump address
+
+        History.OpenGroup address ->
+          ToggleGroup True address
+
+        History.CloseGroup address ->
+          ToggleGroup False address
   in
     VDom.div [ VDom.class "debugger-sidebar" ]
-      [ VDom.map Jump (History.view maybeAddress history)
+      [ VDom.map transform (History.view maybeAddress history)
       , playButton maybeAddress
       ]
 
@@ -570,6 +581,13 @@ body {
   position: relative;
 }
 
+.message-group-folder {
+  cursor: pointer;
+  height: 100%;
+  position: absolute;
+  width: 3ch;
+}
+
 .messages-group-button {
   width: 12px;
   height: 12px;
@@ -609,7 +627,7 @@ body {
 }
 
 .messages-entry-content {
-  width: calc(100% - 9ch);
+  width: calc(100% - 11ch);
   padding-top: 4px;
   padding-bottom: 4px;
   padding-left: 3ch;
@@ -621,7 +639,7 @@ body {
 
 .messages-entry-index {
   color: #666;
-  width: 5ch;
+  width: 7ch;
   padding-top: 4px;
   padding-bottom: 4px;
   padding-right: 1ch;

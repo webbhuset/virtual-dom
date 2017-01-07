@@ -1,6 +1,7 @@
 module VirtualDom.History exposing
   ( History
   , Address
+  , Msg(..)
   , empty
   , size
   , latestAddress
@@ -524,7 +525,13 @@ findSnapshot address history =
 -- VIEW
 
 
-view : Maybe Address -> History model msg -> Node Address
+type Msg
+  = OpenGroup Address
+  | CloseGroup Address
+  | Select Address
+
+
+view : Maybe Address -> History model msg -> Node Msg
 view currentAddress { snapshots, recent, numMessages } =
   let
     className =
@@ -544,7 +551,7 @@ view currentAddress { snapshots, recent, numMessages } =
       Array.foldr (consGroup currentAddressHelp) (numMessages - 1, (Array.length recent.groups - 1), []) recent.groups
         |> (\(_, _, nodes) -> nodes)
         |> VDom.div []
-        |> VDom.map (\address -> { address | snapshot = Array.length snapshots })
+        |> VDom.map ((|>) (Array.length snapshots))
   in
     VDom.div [ VDom.class className ] (oldStuff :: newStuff :: [])
 
@@ -553,13 +560,13 @@ view currentAddress { snapshots, recent, numMessages } =
 -- VIEW SNAPSHOTS
 
 
-viewSnapshots : Maybe Address -> Int -> Array (Snapshot model msg) -> Node Address
+viewSnapshots : Maybe Address -> Int -> Array (Snapshot model msg) -> Node Msg
 viewSnapshots currentAddress highIndex snapshots =
   VDom.div [] <| (\(index, _, nodes) -> nodes) <|
     Array.foldr (consSnapshot currentAddress) (highIndex, (Array.length snapshots - 1), []) snapshots
 
 
-consSnapshot : Maybe Address -> Snapshot model msg -> ( Int, Int, List (Node Address) ) -> ( Int, Int, List (Node Address) )
+consSnapshot : Maybe Address -> Snapshot model msg -> ( Int, Int, List (Node Msg) ) -> ( Int, Int, List (Node Msg) )
 consSnapshot currentAddress snapshot (index, snapshotIndex, rest) =
   let
     currentAddressHelp =
@@ -569,13 +576,13 @@ consSnapshot currentAddress snapshot (index, snapshotIndex, rest) =
     ( index - snapshot.numMessages
     , snapshotIndex - 1
     , VDom.map
-        (\address -> { address | snapshot = snapshotIndex })
+        ((|>) snapshotIndex)
         (VDom.lazy3 viewSnapshot currentAddressHelp index snapshot)
       :: rest
     )
 
 
-viewSnapshot : Maybe Address -> Int -> Snapshot model msg -> Node Address
+viewSnapshot : Maybe Address -> Int -> Snapshot model msg -> Node (Int -> Msg)
 viewSnapshot currentAddress index { groups } =
   groups
     |> Array.foldr (consGroup currentAddress) (index - 1, (Array.length groups - 1), [])
@@ -587,7 +594,7 @@ viewSnapshot currentAddress index { groups } =
 -- VIEW GROUP
 
 
-consGroup : Maybe Address -> Group msg -> ( Int, Int, List (Node Address) ) -> ( Int, Int, List (Node Address) )
+consGroup : Maybe Address -> Group msg -> ( Int, Int, List (Node (Int -> Msg)) ) -> ( Int, Int, List (Node (Int -> Msg)) )
 consGroup currentAddress group (index, groupIndex, rest) =
   let
     currentAddressHelp =
@@ -600,7 +607,7 @@ consGroup currentAddress group (index, groupIndex, rest) =
     )
 
 
-viewGroup : Maybe Address -> Int -> Int -> Group msg -> Node Address
+viewGroup : Maybe Address -> Int -> Int -> Group msg -> Node (Int -> Msg)
 viewGroup currentAddress index groupIndex group =
   let
     children =
@@ -616,14 +623,26 @@ viewGroup currentAddress index groupIndex group =
         group.messages
           |> List.foldl (consMsg currentAddress) (index, (group.numMessages - 1), [])
           |> (\(_, _, nodes) -> nodes)
+
+    folder =
+      VDom.lazy groupFolder group
   in
-    VDom.div [ VDom.class "messages-group" ] (VDom.lazy groupFolder group :: children)
-      |> VDom.map (\address -> { address | group = groupIndex })
+    VDom.div [ VDom.class "messages-group" ] (folder :: children)
+      |> VDom.map ((|>) groupIndex)
 
 
-groupFolder : Group msg -> Node a
+groupFolder : Group msg -> Node (Int -> Int -> Msg)
 groupFolder group =
-  VDom.div [] (groupFolderHelp group)
+  let
+    msg = \groupIndex snapshotIndex ->
+      (if group.collapsed then OpenGroup else CloseGroup)
+        (Address snapshotIndex groupIndex 0)
+  in
+    VDom.div
+      [ VDom.onClick msg
+      , VDom.class "message-group-folder"
+      ]
+      (groupFolderHelp group)
 
 
 groupFolderHelp : Group msg -> List (Node a)
@@ -654,7 +673,7 @@ groupToggleButton s =
     [ VDom.div [ VDom.class "messages-group-button-text"] [ VDom.text s ] ]
 
 
-viewCollapsedMessage : Maybe Address -> Int -> Int -> Int -> msg -> Node Address
+viewCollapsedMessage : Maybe Address -> Int -> Int -> Int -> msg -> Node (Int -> Int -> Msg)
 viewCollapsedMessage currentAddress groupIndex firstIndex lastIndex msg =
   let
     selected =
@@ -664,16 +683,19 @@ viewCollapsedMessage currentAddress groupIndex firstIndex lastIndex msg =
 
         Nothing ->
           False
+
+    indexStr =
+      ".." ++ toString lastIndex
   in
-    VDom.lazy3 viewRow selected (toString lastIndex) (Native.Debug.messageToString msg)
-      |> VDom.map (\address -> { address | message = lastIndex - firstIndex - 1 })
+    VDom.lazy3 viewRow selected indexStr (Native.Debug.messageToString msg)
+      |> VDom.map ((|>) (lastIndex - firstIndex - 1))
 
 
 
 -- VIEW MESSAGE
 
 
-consMsg : Maybe Address -> msg -> ( Int, Int, List (Node Address) ) -> ( Int, Int, List (Node Address) )
+consMsg : Maybe Address -> msg -> ( Int, Int, List (Node (Int -> Int -> Msg)) ) -> ( Int, Int, List (Node (Int -> Int -> Msg)) )
 consMsg currentAddress msg (index, msgIndex, rest) =
   ( index - 1
   , msgIndex - 1
@@ -681,7 +703,7 @@ consMsg currentAddress msg (index, msgIndex, rest) =
   )
 
 
-viewMessage : Maybe Address -> Int -> Int -> msg -> Node Address
+viewMessage : Maybe Address -> Int -> Int -> msg -> Node (Int -> Int -> Msg)
 viewMessage currentAddress index msgIndex msg =
   let
     selected =
@@ -693,10 +715,10 @@ viewMessage currentAddress index msgIndex msg =
           False
   in
     VDom.lazy3 viewRow selected (toString index) (Native.Debug.messageToString msg)
-      |> VDom.map (\address -> { address | message = msgIndex })
+      |> VDom.map ((|>) msgIndex)
 
 
-viewRow : Bool -> String -> String -> Node Address
+viewRow : Bool -> String -> String -> Node (Int -> Int -> Int -> Msg)
 viewRow selected index content =
   let
     className =
@@ -705,10 +727,13 @@ viewRow selected index content =
 
       else
         "messages-entry"
+
+    msg = \msgIndex groupIndex snapshotIndex ->
+      Select (Address snapshotIndex groupIndex msgIndex)
   in
     VDom.div
       [ VDom.class className
-      , VDom.on "mousedown" (Decode.succeed emptyAddress)
+      , VDom.on "click" (Decode.succeed msg)
       ]
       [ VDom.span [VDom.class "messages-entry-content"] [ VDom.text content ]
       , VDom.span [VDom.class "messages-entry-index"] [ VDom.text index ]
