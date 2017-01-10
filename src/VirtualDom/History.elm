@@ -735,7 +735,7 @@ viewRow selected index content =
       [ VDom.class className
       , VDom.on "click" (Decode.succeed msg)
       ]
-      [ VDom.span [VDom.class "messages-entry-content"] [ VDom.text content ]
+      [ VDom.span [VDom.class "messages-entry-content", VDom.attribute "title" content ] [ VDom.text content ]
       , VDom.span [VDom.class "messages-entry-index"] [ VDom.text index ]
       ]
 
