@@ -82,7 +82,7 @@ initialModel  { snapshots, recent } =
 
 
 type alias Group msg =
-  { collapsed : Bool
+  { closed : Bool
   , messages : List msg
   , numMessages : Int
   }
@@ -90,7 +90,7 @@ type alias Group msg =
 
 initGroup : msg -> Group msg
 initGroup msg =
-  { collapsed = False
+  { closed = False
   , messages = [ msg ]
   , numMessages = 1
   }
@@ -187,7 +187,13 @@ add timestamp msg model { snapshots, recent, numMessages, lastTimestamp, lastGro
         History snapshots newRecent (numMessages + 1) timestamp groupName
 
 
-addRecent : Bool -> Bool -> Bool -> msg -> model -> Snapshot model msg -> (Maybe (Snapshot model msg), Snapshot model msg)
+addRecent  : Bool
+          -> Bool
+          -> Bool
+          -> msg
+          -> model
+          -> Snapshot model msg
+          -> (Maybe (Snapshot model msg), Snapshot model msg)
 addRecent sameGroup fast imported msg model recent =
   if sameGroup then
     let
@@ -220,16 +226,16 @@ addRecent sameGroup fast imported msg model recent =
 updateLatestGroup : Bool -> Bool -> msg -> Group msg -> Group msg
 updateLatestGroup fast imported msg group =
   let
-    collapsed =
+    closed =
       if group.numMessages == 1 && fast then
         True
       else if group.numMessages == 5 && imported then
         True
       else
-        group.collapsed
+        group.closed
   in
     { group
-        | collapsed = collapsed
+        | closed = closed
         , messages = msg :: group.messages
         , numMessages = group.numMessages + 1
     }
@@ -263,7 +269,10 @@ get update address history =
           Tuple.first <| update msg model
       in
         undone <|
-          Array.foldl (getHelp updateHelp address.message) (Stepping address.group snapshot.model) snapshot.groups
+          Array.foldl
+            (getHelp updateHelp address.message)
+            (Stepping address.group snapshot.model)
+            snapshot.groups
 
     Nothing ->
       Debug.crash ("UI should only let you ask for real indexes! " ++ toString address)
@@ -336,15 +345,19 @@ nextVisibleAddress : Bool -> Address -> History model msg -> Maybe Address
 nextVisibleAddress forward from history =
   case getGroup from.snapshot from.group history of
     Just group ->
-      validateAddress history (nextAddress forward group.collapsed from)
+      case validateAddress history (nextAddress forward group.closed from) of
+        Nothing ->
+          if forward then Nothing else Just firstAddress
+
+        x -> x
 
     Nothing ->
       Debug.crash ("UI should only let you ask for real indexes! " ++ toString from)
 
 
 nextAddress : Bool -> Bool -> Address -> Address
-nextAddress forward groupCollapsed =
-  if groupCollapsed then
+nextAddress forward groupClosed =
+  if groupClosed then
     if forward then incrementGroup else decrementGroup
   else
     if forward then increment else decrement
@@ -363,12 +376,12 @@ closeGroup = toggleGroup True
 
 
 toggleGroup : Bool -> Address -> History model msg -> (History model msg, Address)
-toggleGroup collapsed address history =
+toggleGroup closed address history =
   case getGroup address.snapshot address.group history of
     Just group ->
-      if group.numMessages >= 2 && group.collapsed /= collapsed then
+      if group.numMessages >= 2 && group.closed /= closed then
         ( updateGroup
-            (\_ -> { group | collapsed = collapsed })
+            (\_ -> { group | closed = closed })
             address.snapshot
             address.group
             history
@@ -396,7 +409,9 @@ updateGroup fg snapshotIndex groupIndex history =
       history
 
 
-updateSnapshot : (Snapshot model msg -> Snapshot model msg) -> Int -> History model msg -> History model msg
+updateSnapshot  : (Snapshot model msg -> Snapshot model msg)
+               -> Int -> History model msg
+               -> History model msg
 updateSnapshot f snapshotIndex history =
   if snapshotIndex == Array.length history.snapshots then
     { history | recent = f history.recent }
@@ -482,16 +497,14 @@ view currentAddress { snapshots, recent, numMessages } =
         "debugger-sidebar-messages-paused"
 
     oldStuff =
-      VDom.lazy3 viewSnapshots currentAddress (numMessages - recent.numMessages) snapshots
+      VDom.lazy3 viewSnapshots currentAddress (numMessages - recent.numMessages - 1) snapshots
 
     currentAddressHelp =
       currentAddress
         |> Maybe.andThen (filterAddressBySnapshot (Array.length snapshots))
 
     newStuff =
-      Array.foldr (consGroup currentAddressHelp) (numMessages - 1, (Array.length recent.groups - 1), []) recent.groups
-        |> (\(_, _, nodes) -> nodes)
-        |> VDom.div []
+      VDom.lazy3 viewSnapshot currentAddressHelp (numMessages - 1) recent
         |> VDom.map ((|>) (Array.length snapshots))
   in
     VDom.div [ VDom.class className ] [ oldStuff, newStuff ]
@@ -502,12 +515,18 @@ view currentAddress { snapshots, recent, numMessages } =
 
 
 viewSnapshots : Maybe Address -> Int -> Array (Snapshot model msg) -> Node Msg
-viewSnapshots currentAddress highIndex snapshots =
+viewSnapshots currentAddress index snapshots =
   VDom.div [] <| (\(index, _, nodes) -> nodes) <|
-    Array.foldr (consSnapshot currentAddress) (highIndex, (Array.length snapshots - 1), []) snapshots
+    Array.foldr
+      (consSnapshot currentAddress)
+      (index, (Array.length snapshots - 1), [])
+      snapshots
 
 
-consSnapshot : Maybe Address -> Snapshot model msg -> ( Int, Int, List (Node Msg) ) -> ( Int, Int, List (Node Msg) )
+consSnapshot  : Maybe Address
+             -> Snapshot model msg
+             -> ( Int, Int, List (Node Msg) )
+             -> ( Int, Int, List (Node Msg) )
 consSnapshot currentAddress snapshot (index, snapshotIndex, rest) =
   let
     currentAddressHelp =
@@ -526,7 +545,7 @@ consSnapshot currentAddress snapshot (index, snapshotIndex, rest) =
 viewSnapshot : Maybe Address -> Int -> Snapshot model msg -> Node (Int -> Msg)
 viewSnapshot currentAddress index { groups } =
   groups
-    |> Array.foldr (consGroup currentAddress) (index - 1, (Array.length groups - 1), [])
+    |> Array.foldr (consGroup currentAddress) (index, (Array.length groups - 1), [])
     |> (\(_, _, nodes) -> nodes)
     |> VDom.div []
 
@@ -535,7 +554,10 @@ viewSnapshot currentAddress index { groups } =
 -- VIEW GROUP
 
 
-consGroup : Maybe Address -> Group msg -> ( Int, Int, List (Node (Int -> Msg)) ) -> ( Int, Int, List (Node (Int -> Msg)) )
+consGroup  : Maybe Address
+          -> Group msg
+          -> ( Int, Int, List (Node (Int -> Msg)) )
+          -> ( Int, Int, List (Node (Int -> Msg)) )
 consGroup currentAddress group (index, groupIndex, rest) =
   let
     currentAddressHelp =
@@ -552,8 +574,8 @@ viewGroup : Maybe Address -> Int -> Int -> Group msg -> Node (Int -> Msg)
 viewGroup currentAddress index groupIndex group =
   let
     children =
-      if group.collapsed then
-        viewCollapsedMessage
+      if group.closed then
+        viewClosedGroup
           currentAddress
           groupIndex
           (index - group.numMessages + 1)
@@ -576,7 +598,7 @@ groupFolder : Group msg -> Node (Int -> Int -> Msg)
 groupFolder group =
   let
     msg = \groupIndex snapshotIndex ->
-      (if group.collapsed then OpenGroup else CloseGroup)
+      (if group.closed then OpenGroup else CloseGroup)
         (Address snapshotIndex groupIndex 0)
   in
     VDom.div
@@ -590,7 +612,7 @@ groupFolderHelp : Group msg -> List (Node a)
 groupFolderHelp group =
   if group.numMessages <= 1 then
     []
-  else if group.collapsed then
+  else if group.closed then
     [ groupToggleButton "+" ]
   else
     let
@@ -614,8 +636,8 @@ groupToggleButton s =
     [ VDom.div [ VDom.class "messages-group-button-text"] [ VDom.text s ] ]
 
 
-viewCollapsedMessage : Maybe Address -> Int -> Int -> Int -> msg -> Node (Int -> Int -> Msg)
-viewCollapsedMessage currentAddress groupIndex firstIndex lastIndex msg =
+viewClosedGroup : Maybe Address -> Int -> Int -> Int -> msg -> Node (Int -> Int -> Msg)
+viewClosedGroup currentAddress groupIndex firstIndex lastIndex msg =
   let
     selected =
       case currentAddress of
@@ -636,7 +658,10 @@ viewCollapsedMessage currentAddress groupIndex firstIndex lastIndex msg =
 -- VIEW MESSAGE
 
 
-consMsg : Maybe Address -> msg -> ( Int, Int, List (Node (Int -> Int -> Msg)) ) -> ( Int, Int, List (Node (Int -> Int -> Msg)) )
+consMsg  : Maybe Address
+        -> msg
+        -> ( Int, Int, List (Node (Int -> Int -> Msg)) )
+        -> ( Int, Int, List (Node (Int -> Int -> Msg)) )
 consMsg currentAddress msg (index, msgIndex, rest) =
   ( index - 1
   , msgIndex - 1
@@ -676,8 +701,12 @@ viewRow selected index content =
       [ VDom.class className
       , VDom.on "click" (Decode.succeed msg)
       ]
-      [ VDom.span [VDom.class "messages-entry-content", VDom.attribute "title" content ] [ VDom.text content ]
-      , VDom.span [VDom.class "messages-entry-index"] [ VDom.text index ]
+      [ VDom.span
+          [ VDom.class "messages-entry-content"
+          , VDom.attribute "title" content
+          ]
+          [ VDom.text content ]
+      , VDom.span [ VDom.class "messages-entry-index"] [ VDom.text index ]
       ]
 
 
@@ -738,8 +767,8 @@ decrementSnapshot address =
 -- ADDRESS HELPER
 
 
-emptyAddress : Address
-emptyAddress = Address 0 0 0
+firstAddress : Address
+firstAddress = Address 0 0 0
 
 
 filterAddressBySnapshot : Int -> Address -> Maybe Address
