@@ -46,6 +46,7 @@ type alias History model msg =
   , recent : Snapshot model msg
   , numMessages : Int
   , lastTimestamp : Maybe Time
+  , lastGroupName : String
   }
 
 
@@ -58,7 +59,7 @@ type alias Snapshot model msg =
 
 empty : model -> History model msg
 empty model =
-  History Array.empty (Snapshot model Array.empty 0) 0 Nothing
+  History Array.empty (Snapshot model Array.empty 0) 0 Nothing ""
 
 
 size : History model msg -> Int
@@ -81,17 +82,15 @@ initialModel  { snapshots, recent } =
 
 
 type alias Group msg =
-  { name : String
-  , collapsed : Bool
+  { collapsed : Bool
   , messages : List msg
   , numMessages : Int
   }
 
 
-initGroup : String -> msg -> Group msg
-initGroup groupName msg =
-  { name = groupName
-  , collapsed = False
+initGroup : msg -> Group msg
+initGroup msg =
+  { collapsed = False
   , messages = [ msg ]
   , numMessages = 1
   }
@@ -166,60 +165,65 @@ elmToJs =
 
 
 add : Maybe Time -> msg -> model -> History model msg -> History model msg
-add timestamp msg model { snapshots, recent, numMessages, lastTimestamp } =
-  case addRecent lastTimestamp timestamp msg model recent of
-    (Just snapshot, newRecent) ->
-      History (Array.push snapshot snapshots) newRecent (numMessages + 1) timestamp
-
-    (Nothing, newRecent) ->
-      History snapshots newRecent (numMessages + 1) timestamp
-
-
-addRecent : Maybe Time -> Maybe Time -> msg -> model -> Snapshot model msg -> (Maybe (Snapshot model msg), Snapshot model msg)
-addRecent lastTimestamp timestamp msg model recent =
-  case addMessageToGroups lastTimestamp timestamp msg recent.numMessages recent.groups of
-    (groups, Just newGroup) ->
-      ( Just recent
-      , Snapshot model (Array.fromList [ newGroup ]) 1
-      )
-
-    (groups, Nothing) ->
-      ( Nothing
-      , Snapshot recent.model groups (recent.numMessages + 1)
-      )
-
-
-addMessageToGroups : Maybe Time -> Maybe Time -> msg -> Int -> Array (Group msg) -> (Array (Group msg), Maybe (Group msg))
-addMessageToGroups lastTimestamp timestamp msg numMessages groups =
+add timestamp msg model { snapshots, recent, numMessages, lastTimestamp, lastGroupName } =
   let
     groupName =
       Native.Debug.messageToGroupName msg
+
+    sameGroup =
+      isSameGroup groupName lastGroupName
+
+    fast =
+      isImmediateAfter lastTimestamp timestamp
+
+    imported =
+      timestamp == Nothing
   in
-    case Array.get (Array.length groups - 1) groups of
-      Nothing ->
-        (Array.fromList [ initGroup groupName msg ], Nothing)
+    case addRecent sameGroup fast imported msg model recent of
+      (Just snapshot, newRecent) ->
+        History (Array.push snapshot snapshots) newRecent (numMessages + 1) timestamp groupName
 
-      Just headGroup ->
-        if isSameGroup groupName headGroup.name then
-          ( Array.set
-              (Array.length groups - 1)
-              (updateLatestGroup lastTimestamp timestamp msg headGroup)
-              groups
-          , Nothing
-          )
-        else if numMessages < minSnapshotSize then
-          (Array.push (initGroup groupName msg) groups, Nothing)
-        else
-          (groups, Just (initGroup groupName msg))
+      (Nothing, newRecent) ->
+        History snapshots newRecent (numMessages + 1) timestamp groupName
 
 
-updateLatestGroup : Maybe Time -> Maybe Time -> msg -> Group msg -> Group msg
-updateLatestGroup lastTimestamp timestamp msg group =
+addRecent : Bool -> Bool -> Bool -> msg -> model -> Snapshot model msg -> (Maybe (Snapshot model msg), Snapshot model msg)
+addRecent sameGroup fast imported msg model recent =
+  if sameGroup then
+    let
+      headGroup =
+        case Array.get (Array.length recent.groups - 1) recent.groups of
+          Just group -> group
+
+          Nothing ->
+            Debug.crash "Bug in add"
+
+      newGroups =
+        Array.set
+          (Array.length recent.groups - 1)
+          (updateLatestGroup fast imported msg headGroup)
+          recent.groups
+    in
+      ( Nothing
+      , Snapshot recent.model newGroups (recent.numMessages + 1)
+      )
+  else if recent.numMessages < minSnapshotSize then
+    ( Nothing
+    , Snapshot recent.model (Array.push (initGroup msg) recent.groups) (recent.numMessages + 1)
+    )
+  else
+    ( Just recent
+    , Snapshot model (Array.fromList [ initGroup msg ]) 1
+    )
+
+
+updateLatestGroup : Bool -> Bool -> msg -> Group msg -> Group msg
+updateLatestGroup fast imported msg group =
   let
     collapsed =
-      if group.numMessages == 1 && isImmediateAfter lastTimestamp timestamp then
+      if group.numMessages == 1 && fast then
         True
-      else if group.numMessages == 5 && timestamp == Nothing then
+      else if group.numMessages == 5 && imported then
         True
       else
         group.collapsed
@@ -252,7 +256,7 @@ isImmediateAfter timestamp1 timestamp2 =
 
 get : (msg -> model -> (model, a)) -> Address -> History model msg -> ( model, msg )
 get update address history =
-  case findSnapshot address history of
+  case getSnapshot address.snapshot history of
     Just snapshot ->
       let
         updateHelp msg model =
@@ -308,59 +312,6 @@ undone getResult =
 
 
 
--- ADDRESS
-
-
-type alias Address =
-  { snapshot : Int
-  , group : Int
-  , message : Int
-  }
-
-
-lastIndex : Int
-lastIndex = -2
-
-
-increment : Address -> Address
-increment address =
-  { address | message = address.message + 1 }
-
-
-decrement : Address -> Address
-decrement address =
-  { address | message = address.message - 1 }
-
-
-incrementGroup : Address -> Address
-incrementGroup address =
-  { address | group = address.group + 1, message = 0 }
-
-
-decrementGroup : Address -> Address
-decrementGroup address =
-  { address | group = address.group - 1, message = lastIndex }
-
-
-incrementSnapshot : Address -> Address
-incrementSnapshot address =
-  { address
-      | snapshot = address.snapshot + 1
-      , group = 0
-      , message = 0
-  }
-
-
-decrementSnapshot : Address -> Address
-decrementSnapshot address =
-  { address
-      | snapshot = address.snapshot - 1
-      , group = lastIndex
-      , message = lastIndex
-  }
-
-
-
 -- UP AND DOWN
 
 
@@ -382,13 +333,13 @@ visibleAddressAfter =
 
 
 nextVisibleAddress : Bool -> Address -> History model msg -> Maybe Address
-nextVisibleAddress forward fromAddress history =
-  case findGroup fromAddress history of
-    Just (group, address) ->
-      validateAddress history (nextAddress forward group.collapsed address)
+nextVisibleAddress forward from history =
+  case getGroup from.snapshot from.group history of
+    Just group ->
+      validateAddress history (nextAddress forward group.collapsed from)
 
     Nothing ->
-      Debug.crash ("UI should only let you ask for real indexes! " ++ toString fromAddress)
+      Debug.crash ("UI should only let you ask for real indexes! " ++ toString from)
 
 
 nextAddress : Bool -> Bool -> Address -> Address
@@ -400,70 +351,64 @@ nextAddress forward groupCollapsed =
 
 
 
--- OPEN AND CLOSE
+-- OPEN AND CLOSE GROUP
 
 
 openGroup : Address -> History model msg -> (History model msg, Address)
-openGroup = updateGroup False
+openGroup = toggleGroup False
 
 
 closeGroup : Address -> History model msg -> (History model msg, Address)
-closeGroup = updateGroup True
+closeGroup = toggleGroup True
 
 
-updateGroup : Bool -> Address -> History model msg -> (History model msg, Address)
-updateGroup collapsed address history =
+toggleGroup : Bool -> Address -> History model msg -> (History model msg, Address)
+toggleGroup collapsed address history =
+  case getGroup address.snapshot address.group history of
+    Just group ->
+      if group.numMessages >= 2 && group.collapsed /= collapsed then
+        ( updateGroup
+            (\_ -> { group | collapsed = collapsed })
+            address.snapshot
+            address.group
+            history
+        , { address | message = 0 }
+        )
+      else
+        (history, address)
+
+    Nothing ->
+      Debug.crash ("UI should only let you ask for real indexes! " ++ toString address)
+
+
+updateGroup : (Group msg -> Group msg) -> Int -> Int -> History model msg -> History model msg
+updateGroup fg snapshotIndex groupIndex history =
   let
-    updateGroup maybeGroup =
-      case maybeGroup of
-        Just group ->
-          if List.length group.messages >= 2 then
-            Just { group | collapsed = collapsed }
-          else
-            Nothing
-
-        Nothing ->
-          Debug.crash "UI should only let you ask for real indexes!"
-
-    newHistory =
-      updateSnapshot
-        (arrayUpdate updateGroup address.group)
-        address.snapshot
-        history
+    fs snapshot =
+      Snapshot
+        snapshot.model
+        (arrayUpdate fg groupIndex snapshot.groups)
+        snapshot.numMessages
   in
-    (newHistory, { address | message = 0 })
+    updateSnapshot
+      fs
+      snapshotIndex
+      history
 
 
-updateSnapshot : (Array (Group msg) -> Array (Group msg)) -> Int -> History model msg -> History model msg
-updateSnapshot updateGroups snapshotIndex history =
+updateSnapshot : (Snapshot model msg -> Snapshot model msg) -> Int -> History model msg -> History model msg
+updateSnapshot f snapshotIndex history =
   if snapshotIndex == Array.length history.snapshots then
-    { history
-        | recent =
-            Snapshot
-              history.recent.model
-              (updateGroups history.recent.groups)
-              history.recent.numMessages
-    }
+    { history | recent = f history.recent }
   else
-    { history
-        | snapshots =
-            history.snapshots
-              |> arrayUpdate (\snapshot ->
-                case snapshot of
-                  Just snapshot ->
-                    Just <| Snapshot snapshot.model (updateGroups snapshot.groups) snapshot.numMessages
-
-                  Nothing ->
-                    Debug.crash "UI should only let you ask for real indexes!"
-                ) snapshotIndex
-    }
+    { history | snapshots = arrayUpdate f snapshotIndex history.snapshots }
 
 
-arrayUpdate : (Maybe a -> Maybe a) -> Int -> Array a -> Array a
+arrayUpdate : (a -> a) -> Int -> Array a -> Array a
 arrayUpdate f index array =
-  case f (Array.get index array) of
+  case Array.get index array of
     Just a ->
-      Array.set index a array
+      Array.set index (f a) array
 
     Nothing ->
       array
@@ -477,48 +422,44 @@ validateAddress : History model msg -> Address -> Maybe Address
 validateAddress history address =
   if address.message == -1 then
     validateAddress history (decrementGroup address)
+  else if address.group == -1 then
+    validateAddress history (decrementSnapshot address)
   else
-    findGroup address history
-      |> Maybe.andThen (\(group, address) ->
-          if address.message >= group.numMessages then
-            validateAddress history (incrementGroup address)
-          else if group.collapsed || address.message == lastIndex then
-            Just { address | message = group.numMessages - 1 }
-          else
-            Just address
-        )
-
-
-findGroup : Address -> History model msg -> Maybe (Group msg, Address)
-findGroup address history =
-  if address.group == -1 then
-    findGroup (decrementSnapshot address) history
-  else
-    findSnapshot address history
+    getSnapshot address.snapshot history
       |> Maybe.andThen (\snapshot ->
         if address.group >= Array.length snapshot.groups then
-          findGroup (incrementSnapshot address) history
+          validateAddress history (incrementSnapshot address)
+        else if address.group == lastIndex then
+          validateAddress history { address | group = Array.length snapshot.groups - 1 }
         else
-          let
-            newAddress =
-              if address.group == lastIndex then
-                { address | group = Array.length snapshot.groups - 1 }
-              else
-                address
-          in
-            Array.get newAddress.group snapshot.groups
-              |> Maybe.map (\group -> (group, newAddress))
+          getGroup address.snapshot address.group history
+            |> Maybe.andThen (\group ->
+                if address.message >= group.numMessages then
+                  validateAddress history (incrementGroup address)
+                else if address.message == lastIndex then
+                  Just { address | message = group.numMessages - 1 }
+                else
+                  Just address
+              )
         )
 
 
-findSnapshot : Address -> History model msg -> Maybe (Snapshot model msg)
-findSnapshot address history =
-  if address.snapshot < 0 then
+getGroup : Int -> Int -> History model msg -> Maybe (Group msg)
+getGroup snapshotIndex groupIndex history =
+  getSnapshot snapshotIndex history
+    |> Maybe.andThen (\snapshot ->
+        Array.get groupIndex snapshot.groups
+      )
+
+
+getSnapshot : Int -> History model msg -> Maybe (Snapshot model msg)
+getSnapshot snapshotIndex history =
+  if snapshotIndex < 0 then
     Nothing
-  else if address.snapshot == Array.length history.snapshots then
+  else if snapshotIndex == Array.length history.snapshots then
     Just history.recent
   else
-    Array.get address.snapshot history.snapshots
+    Array.get snapshotIndex history.snapshots
 
 
 
@@ -545,7 +486,7 @@ view currentAddress { snapshots, recent, numMessages } =
 
     currentAddressHelp =
       currentAddress
-        |> Maybe.andThen (filterBySnapshot (Array.length snapshots))
+        |> Maybe.andThen (filterAddressBySnapshot (Array.length snapshots))
 
     newStuff =
       Array.foldr (consGroup currentAddressHelp) (numMessages - 1, (Array.length recent.groups - 1), []) recent.groups
@@ -553,7 +494,7 @@ view currentAddress { snapshots, recent, numMessages } =
         |> VDom.div []
         |> VDom.map ((|>) (Array.length snapshots))
   in
-    VDom.div [ VDom.class className ] (oldStuff :: newStuff :: [])
+    VDom.div [ VDom.class className ] [ oldStuff, newStuff ]
 
 
 
@@ -571,7 +512,7 @@ consSnapshot currentAddress snapshot (index, snapshotIndex, rest) =
   let
     currentAddressHelp =
       currentAddress
-        |> Maybe.andThen (filterBySnapshot snapshotIndex)
+        |> Maybe.andThen (filterAddressBySnapshot snapshotIndex)
   in
     ( index - snapshot.numMessages
     , snapshotIndex - 1
@@ -599,7 +540,7 @@ consGroup currentAddress group (index, groupIndex, rest) =
   let
     currentAddressHelp =
       currentAddress
-        |> Maybe.andThen (filterByGroup groupIndex)
+        |> Maybe.andThen (filterAddressByGroup groupIndex)
   in
     ( index - group.numMessages
     , groupIndex - 1
@@ -647,14 +588,14 @@ groupFolder group =
 
 groupFolderHelp : Group msg -> List (Node a)
 groupFolderHelp group =
-  if List.length group.messages <= 1 then
+  if group.numMessages <= 1 then
     []
   else if group.collapsed then
     [ groupToggleButton "+" ]
   else
     let
       height =
-        (toFloat (List.length group.messages) - 1.5) * 26
+        (toFloat group.numMessages - 1.5) * 26
 
       groupGuide =
         VDom.div
@@ -741,6 +682,59 @@ viewRow selected index content =
 
 
 
+-- ADDRESS
+
+
+type alias Address =
+  { snapshot : Int
+  , group : Int
+  , message : Int
+  }
+
+
+lastIndex : Int
+lastIndex = -2
+
+
+increment : Address -> Address
+increment address =
+  { address | message = address.message + 1 }
+
+
+decrement : Address -> Address
+decrement address =
+  { address | message = address.message - 1 }
+
+
+incrementGroup : Address -> Address
+incrementGroup address =
+  { address | group = address.group + 1, message = 0 }
+
+
+decrementGroup : Address -> Address
+decrementGroup address =
+  { address | group = address.group - 1, message = lastIndex }
+
+
+incrementSnapshot : Address -> Address
+incrementSnapshot address =
+  { address
+      | snapshot = address.snapshot + 1
+      , group = 0
+      , message = 0
+  }
+
+
+decrementSnapshot : Address -> Address
+decrementSnapshot address =
+  { address
+      | snapshot = address.snapshot - 1
+      , group = lastIndex
+      , message = lastIndex
+  }
+
+
+
 -- ADDRESS HELPER
 
 
@@ -748,16 +742,16 @@ emptyAddress : Address
 emptyAddress = Address 0 0 0
 
 
-filterBySnapshot : Int -> Address -> Maybe Address
-filterBySnapshot = filterBy .snapshot
+filterAddressBySnapshot : Int -> Address -> Maybe Address
+filterAddressBySnapshot = filterAddressBy .snapshot
 
 
-filterByGroup : Int -> Address -> Maybe Address
-filterByGroup = filterBy .group
+filterAddressByGroup : Int -> Address -> Maybe Address
+filterAddressByGroup = filterAddressBy .group
 
 
-filterBy : (Address -> Int) -> Int -> Address -> Maybe Address
-filterBy f index address =
+filterAddressBy : (Address -> Int) -> Int -> Address -> Maybe Address
+filterAddressBy f index address =
   if f address == index then
     Just address
   else
