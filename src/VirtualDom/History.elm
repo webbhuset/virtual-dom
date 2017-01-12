@@ -617,12 +617,12 @@ groupFolderHelp group =
   else
     let
       height =
-        (toFloat group.numMessages - 1.5) * 26
+        (toFloat group.numMessages - 1.5) * 2
 
       groupGuide =
         VDom.div
           [ VDom.class "messages-group-guide"
-          , VDom.style [("height", toString height ++ "px")]
+          , VDom.style [("height", toString height ++ "em")]
           ]
           []
     in
@@ -631,9 +631,7 @@ groupFolderHelp group =
 
 groupToggleButton : String -> Node a
 groupToggleButton s =
-  VDom.div
-    [ VDom.class "messages-group-button" ]
-    [ VDom.div [ VDom.class "messages-group-button-text"] [ VDom.text s ] ]
+  VDom.div [ VDom.class "messages-group-button" ] [ VDom.text s ]
 
 
 viewClosedGroup : Maybe Address -> Int -> Int -> Int -> msg -> Node (Int -> Int -> Msg)

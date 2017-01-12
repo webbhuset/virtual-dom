@@ -589,25 +589,22 @@ body {
 }
 
 .messages-group-button {
-  width: 12px;
-  height: 12px;
-  left: 4px;
-  top: 7px;
+  width: 1.6ch;
+  height: 1.2em;
+  left: 0.7ch;
+  top: 0.4em;
   text-align: center;
-  font-size: 10px;
   color: #666;
   position: absolute;
   border: solid 1px #666;
-}
-
-.messages-group-button-text {
-  margin-top: -2px;
+  box-sizing: border-box;
+  line-height: 1em;
 }
 
 .messages-group-guide {
-  top: 26px;
-  left: 10px;
-  width: 5px;
+  top: 2em;
+  left: 1.5ch;
+  width: 1ch;
   border-left: solid 1px #666;
   border-bottom: solid 1px #666;
   position: absolute;
@@ -616,6 +613,7 @@ body {
 .messages-entry {
   cursor: pointer;
   width: 100%;
+  line-height: 2em;
 }
 
 .messages-entry:hover {
@@ -628,8 +626,6 @@ body {
 
 .messages-entry-content {
   width: calc(100% - 11ch);
-  padding-top: 4px;
-  padding-bottom: 4px;
   padding-left: 3ch;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -640,8 +636,6 @@ body {
 .messages-entry-index {
   color: #666;
   width: 7ch;
-  padding-top: 4px;
-  padding-bottom: 4px;
   padding-right: 1ch;
   text-align: right;
   display: block;
