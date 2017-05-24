@@ -96,7 +96,7 @@ var _VirtualDom_keyedNodeNS = F2(function(namespace, tag)
 
 var _VirtualDom_custom = F3(function(factList, model, impl)
 {
-	var facts = _VirtualDom_organizeFacts(factList).facts;
+	var facts = _VirtualDom_organizeFacts(factList);
 
 	return {
 		$: __2_CUSTOM,
