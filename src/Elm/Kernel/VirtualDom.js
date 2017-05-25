@@ -32,8 +32,6 @@ function _VirtualDom_text(string)
 
 // NODE
 
-var _VirtualDom_node = _VirtualDom_nodeNS(undefined);
-
 var _VirtualDom_nodeNS = F2(function(namespace, tag)
 {
 	return F2(function(factList, kidList)
@@ -52,7 +50,7 @@ var _VirtualDom_nodeNS = F2(function(namespace, tag)
 		return {
 			$: __2_NODE,
 			tag: tag,
-			facts: _VirtualDom_organizeFacts(factList),
+			facts: factList,
 			kids: kids,
 			namespace: namespace,
 			descendantsCount: descendantsCount
@@ -60,10 +58,10 @@ var _VirtualDom_nodeNS = F2(function(namespace, tag)
 	});
 });
 
+var _VirtualDom_node = _VirtualDom_nodeNS(undefined);
+
 
 // KEYED NODE
-
-var _VirtualDom_keyedNode = _VirtualDom_keyedNodeNS(undefined);
 
 var _VirtualDom_keyedNodeNS = F2(function(namespace, tag)
 {
@@ -83,7 +81,7 @@ var _VirtualDom_keyedNodeNS = F2(function(namespace, tag)
 		return {
 			$: __2_KEYED_NODE,
 			tag: tag,
-			facts: _VirtualDom_organizeFacts(factList),
+			facts: factList,
 			kids: kids,
 			namespace: namespace,
 			descendantsCount: descendantsCount
@@ -91,16 +89,16 @@ var _VirtualDom_keyedNodeNS = F2(function(namespace, tag)
 	});
 });
 
+var _VirtualDom_keyedNode = _VirtualDom_keyedNodeNS(undefined);
+
 
 // CUSTOM
 
 var _VirtualDom_custom = F3(function(factList, model, impl)
 {
-	var facts = _VirtualDom_organizeFacts(factList);
-
 	return {
 		$: __2_CUSTOM,
-		facts: facts,
+		facts: factList,
 		model: model,
 		impl: impl
 	};
@@ -152,138 +150,37 @@ var _VirtualDom_lazy3 = F4(function(fn, arg1, arg2, arg3)
 
 
 
-// FACTS
-
-
-function _VirtualDom_organizeFacts(factList)
-{
-	var facts = {};
-
-	while (factList.$ !== '[]')
-	{
-		var entry = factList.a;
-		var key = entry.key;
-
-		if (key === __1_ATTR || key === __1_ATTR_NS || key === __1_EVENT)
-		{
-			var subFacts = facts[key] || {};
-			subFacts[entry.realKey] = entry.value;
-			facts[key] = subFacts;
-		}
-		else if (key === __1_STYLE)
-		{
-			var styles = facts[key] || {};
-			var styleList = entry.value;
-			while (styleList.$ !== '[]')
-			{
-				var style = styleList.a;
-				styles[style.a] = style.b;
-				styleList = styleList.b;
-			}
-			facts[key] = styles;
-		}
-		else if (key === 'className')
-		{
-			var classes = facts[key];
-			facts[key] = typeof classes === 'undefined'
-				? entry.value
-				: classes + ' ' + entry.value;
-		}
- 		else
-		{
-			facts[key] = entry.value;
-		}
-		factList = factList.b;
-	}
-
-	return facts;
-}
-
-
-
 ////////////  PROPERTIES AND ATTRIBUTES  ////////////
 
 
-function _VirtualDom_style(value)
+function _VirtualDom_fact(identifier)
 {
-	return {
-		key: __1_STYLE,
-		value: value
-	};
-}
-
-
-var _VirtualDom_property = F2(function(key, value)
-{
-	return {
-		key: key,
-		value: value
-	};
-});
-
-
-var _VirtualDom_attribute = F2(function(key, value)
-{
-	return {
-		key: __1_ATTR,
-		realKey: key,
-		value: value
-	};
-});
-
-
-var _VirtualDom_attributeNS = F3(function(namespace, key, value)
-{
-	return {
-		key: __1_ATTR_NS,
-		realKey: key,
-		value: {
-			value: value,
-			namespace: namespace
-		}
-	};
-});
-
-
-var _VirtualDom_on = F3(function(name, options, decoder)
-{
-	return {
-		key: __1_EVENT,
-		realKey: name,
-		value: {
-			options: options,
-			decoder: decoder
-		}
-	};
-});
-
-
-function _VirtualDom_equalEvents(x, y)
-{
-	var xOps = x.options;
-	var yOps = y.options;
-	if (xOps !== yOps)
+	return function(a, b, c, d)
 	{
-		if (xOps.stopPropagation !== yOps.stopPropagation || xOps.preventDefault !== yOps.preventDefault)
-		{
-			return false;
+		return {
+			$: identifier,
+			a: a,
+			b: b,
+			c: c
 		}
 	}
-	return __Json_equality(x.decoder, y.decoder);
 }
 
+var _VirtualDom_batch = _VirtualDom_fact(__1_BATCH);
+var _VirtualDom_style = F2(_VirtualDom_fact(__1_STYLE));
+var _VirtualDom_property = F2(_VirtualDom_fact(__1_PROP));
+var _VirtualDom_attribute = F2(_VirtualDom_fact(__1_ATTR));
+var _VirtualDom_attributeNS = F3(_VirtualDom_fact(__1_ATTR_NS));
+var _VirtualDom_on = F2(_VirtualDom_fact(__1_EVENT));
 
-var _VirtualDom_mapProperty = F2(function(func, property)
+
+var _VirtualDom_mapProperty = F2(function(func, fact)
 {
-	if (property.key !== __1_EVENT)
+	if (fact.key !== __1_EVENT)
 	{
-		return property;
+		return fact;
 	}
-	return on(
-		property.realKey,
-		property.value.options,
-		A2(__Json_map, func, property.value.decoder)
-	);
+	return A2( _VirtualDom_on, fact.a, A2(__Json_map, func, fact.b) );
 });
 
 
@@ -366,105 +263,140 @@ function _VirtualDom_render(vNode, eventNode)
 ////////////  APPLY FACTS  ////////////
 
 
-function _VirtualDom_applyFacts(domNode, eventNode, facts)
+function _VirtualDom_applyFacts(domNode, eventNode, factList)
 {
-	for (var key in facts)
+	var classes = _VirtualDom_applyFactsHelp(domNode, eventNode, factList);
+	if (classes)
 	{
-		var value = facts[key];
-
-		switch (key)
-		{
-			case __1_STYLE:
-				_VirtualDom_applyStyles(domNode, value);
-				break;
-
-			case __1_EVENT:
-				_VirtualDom_applyEvents(domNode, eventNode, value);
-				break;
-
-			case __1_ATTR:
-				_VirtualDom_applyAttrs(domNode, value);
-				break;
-
-			case __1_ATTR_NS:
-				_VirtualDom_applyAttrsNS(domNode, value);
-				break;
-
-			case 'value':
-				if (domNode[key] !== value)
-				{
-					domNode[key] = value;
-				}
-				break;
-
-			default:
-				domNode[key] = value;
-				break;
-		}
+		domNode.setAttribute('class', classes);
 	}
 }
 
-function _VirtualDom_applyStyles(domNode, styles)
+function _VirtualDom_applyFactsHelp(domNode, eventNode, factList, classes)
 {
-	var domNodeStyle = domNode.style;
-
-	for (var key in styles)
+	while (factList.$ !== '[]')
 	{
-		domNodeStyle[key] = styles[key];
+		classes = _VirtualDom_applyFact(domNode, eventNode, factList.a, classes);
+		factList = factList.b;
+	}
+	return classes;
+}
+
+function _VirtualDom_applyFact(domNode, eventNode, fact, classes)
+{
+	switch (fact.$)
+	{
+		case __1_ATTR:
+			var key = fact.a;
+			var value = fact.b;
+			if (key === 'class')
+			{
+				return classes ? value : classes + ' ' + value
+			}
+			domNode.setAttribute(key, value);
+			return classes;
+
+		case __1_EVENT:
+			_VirtualDom_applyEvent(domNode, eventNode, fact.a, fact.b);
+			return classes;
+
+		case __1_PROP:
+			var key = fact.a;
+			var value = fact.b;
+			if (key === 'value' && domNode.value === value)
+			{
+				break;
+			}
+			domNode[key] = value;
+			return classes;
+
+		case __1_STYLE:
+			domNode.style[fact.a] = fact.b;
+			return classes;
+
+		case __1_BATCH:
+			return _VirtualDom_applyFactsHelp(domNode, eventNode, fact.a, classes);
+
+		case __1_ATTR_NS:
+			domNode.setAttributeNS(fact.a, fact.b, fact.c);
+			return classes;
 	}
 }
 
-function _VirtualDom_applyEvents(domNode, eventNode, events)
+function _VirtualDom_deleteFact(domNode, fact)
 {
-	var allHandlers = domNode.elm_handlers || {};
-
-	for (var key in events)
+	switch (fact.$)
 	{
-		var handler = allHandlers[key];
-		var value = events[key];
+		case __1_ATTR:
+			domNode.removeAttribute(fact.a);
+			break;
 
-		if (typeof value === 'undefined')
-		{
-			domNode.removeEventListener(key, handler);
-			allHandlers[key] = undefined;
-		}
-		else if (typeof handler === 'undefined')
-		{
-			var handler = _VirtualDom_makeEventHandler(eventNode, value);
-			domNode.addEventListener(key, handler);
-			allHandlers[key] = handler;
-		}
-		else
-		{
-			handler.info = value;
-		}
+		case __1_EVENT:
+			var handlers = domNode.elm_handlers;
+			var eventName = fact.a;
+			domNode.removeEventListener(eventName, handlers[eventName]);
+			handlers[eventName] = undefined;
+			break;
+
+		case __1_PROP:
+			domNode[fact.a] = typeof fact.b === 'string' ? '' : null;
+			break;
+
+		case __1_STYLE:
+			domNode.style[fact.a] = '';
+			break;
+
+		case __1_BATCH:
+			// should never delete a batch
+			// only deletes individual facts
+			break;
+
+		case __1_ATTR_NS:
+			domNode.removeAttributeNS(fact.a, fact.b);
+			break;
 	}
-
-	domNode.elm_handlers = allHandlers;
 }
 
-function _VirtualDom_makeEventHandler(eventNode, info)
+function _VirtualDom_applyEvent(domNode, eventNode, name, decoder)
+{
+	var allHandlers = domNode.elm_handlers || (domNode.elm_handlers = {});
+	var handler = allHandlers[name];
+
+	if (handler)
+	{
+		handler.decoder = decoder;
+		return;
+	}
+
+	var handler = _VirtualDom_makeEventHandler(eventNode, decoder);
+	domNode.addEventListener(name, handler);
+	allHandlers[name] = handler;
+}
+
+function _VirtualDom_makeEventHandler(eventNode, initialDecoder)
 {
 	function eventHandler(event)
 	{
-		var info = eventHandler.info;
+		var decoder = eventHandler.decoder;
 
-		var value = A2(__Json_run, info.decoder, event);
+		var value = A2(__Json_run, decoder, event);
 
 		if (value.$ === 'Ok')
 		{
-			var options = info.options;
-			if (options.stopPropagation)
+			var record = value.a;
+
+			if (record.stopPropagation)
 			{
 				event.stopPropagation();
 			}
-			if (options.preventDefault)
+
+			if (record.preventDefault)
 			{
 				event.preventDefault();
 			}
 
-			var message = value.a;
-
+			var message = record.message;
+			console.log(message);
 			var currentEventNode = eventNode;
 			while (currentEventNode)
 			{
@@ -485,44 +417,9 @@ function _VirtualDom_makeEventHandler(eventNode, info)
 		}
 	};
 
-	eventHandler.info = info;
+	eventHandler.decoder = initialDecoder;
 
 	return eventHandler;
-}
-
-function _VirtualDom_applyAttrs(domNode, attrs)
-{
-	for (var key in attrs)
-	{
-		var value = attrs[key];
-		if (typeof value === 'undefined')
-		{
-			domNode.removeAttribute(key);
-		}
-		else
-		{
-			domNode.setAttribute(key, value);
-		}
-	}
-}
-
-function _VirtualDom_applyAttrsNS(domNode, nsAttrs)
-{
-	for (var key in nsAttrs)
-	{
-		var pair = nsAttrs[key];
-		var namespace = pair.namespace;
-		var value = pair.value;
-
-		if (typeof value === 'undefined')
-		{
-			domNode.removeAttributeNS(namespace, key);
-		}
-		else
-		{
-			domNode.setAttributeNS(namespace, key, value);
-		}
-	}
 }
 
 
@@ -661,8 +558,7 @@ function _VirtualDom_diffHelp(x, y, patches, index)
 			}
 
 			var factsDiff = _VirtualDom_diffFacts(x.facts, y.facts);
-
-			if (typeof factsDiff !== 'undefined')
+			if (factsDiff)
 			{
 				patches.push(_VirtualDom_makePatch(__3_FACTS, index, factsDiff));
 			}
@@ -680,8 +576,7 @@ function _VirtualDom_diffHelp(x, y, patches, index)
 			}
 
 			var factsDiff = _VirtualDom_diffFacts(x.facts, y.facts);
-
-			if (typeof factsDiff !== 'undefined')
+			if (factsDiff)
 			{
 				patches.push(_VirtualDom_makePatch(__3_FACTS, index, factsDiff));
 			}
@@ -697,7 +592,7 @@ function _VirtualDom_diffHelp(x, y, patches, index)
 			}
 
 			var factsDiff = _VirtualDom_diffFacts(x.facts, y.facts);
-			if (typeof factsDiff !== 'undefined')
+			if (factsDiff)
 			{
 				patches.push(_VirtualDom_makePatch(__3_FACTS, index, factsDiff));
 			}
@@ -729,73 +624,101 @@ function _VirtualDom_pairwiseRefEqual(as, bs)
 }
 
 
-// TODO Instead of creating a new diff object, it's possible to just test if
-// there *is* a diff. During the actual patch, do the diff again and make the
-// modifications directly. This way, there's no new allocations. Worth it?
-function _VirtualDom_diffFacts(x, y, category)
+// DIFF FACTS
+
+function _VirtualDom_diffFacts(oldFactList, newFactList, diff)
 {
-	var diff;
-
-	// look for changes and removals
-	for (var xKey in x)
+	while (oldFactList.$ !== '[]' && newFactList.$ !== '[]')
 	{
-		if (xKey === __1_STYLE || xKey === __1_EVENT || xKey === __1_ATTR || xKey === __1_ATTR_NS)
+		var oldFact = oldFactList.a;
+		var newFact = newFactList.a;
+		oldFactList = oldFactList.b;
+		newFactList = newFactList.b;
+
+		if (!_VirtualDom_factsEqual(oldFact, newFact))
 		{
-			var subDiff = _VirtualDom_diffFacts(x[xKey], y[xKey] || {}, xKey);
-			if (subDiff)
-			{
-				diff = diff || {};
-				diff[xKey] = subDiff;
-			}
-			continue;
-		}
-
-		// remove if not in the new facts
-		if (!(xKey in y))
-		{
-			diff = diff || {};
-			diff[xKey] =
-				(typeof category === 'undefined')
-					? (typeof x[xKey] === 'string' ? '' : null)
-					:
-				(category === __1_STYLE)
-					? ''
-					:
-				(category === __1_EVENT || category === __1_ATTR)
-					? undefined
-					:
-				{ namespace: x[xKey].namespace, value: undefined };
-
-			continue;
-		}
-
-		var xValue = x[xKey];
-		var yValue = y[xKey];
-
-		// reference equal, so don't worry about it
-		if (xValue === yValue && xKey !== 'value'
-			|| category === __1_EVENT && _VirtualDom_equalEvents(xValue, yValue))
-		{
-			continue;
-		}
-
-		diff = diff || {};
-		diff[xKey] = yValue;
-	}
-
-	// add new stuff
-	for (var yKey in y)
-	{
-		if (!(yKey in x))
-		{
-			diff = diff || {};
-			diff[yKey] = y[yKey];
+			diff = _VirtualDom_removeFact(oldFact, diff || {});
+			diff = _VirtualDom_insertFact(newFact, diff);
 		}
 	}
+	return _VirtualDom_diffFactsHelp(_VirtualDom_removeFact, oldFactList,
+		_VirtualDom_diffFactsHelp(_VirtualDom_insertFact, newFactList, diff)
+	);
+}
 
+function _VirtualDom_diffFactsHelp(func, list, diff)
+{
+	while (list.$ !== '[]')
+	{
+		diff = func(list.a, diff || {});
+		list = list.b;
+	}
 	return diff;
 }
 
+function _VirtualDom_factsEqual(x, y)
+{
+	var category = x.$;
+	if (category !== y.$)
+	{
+		return false;
+	}
+	if (category === __1_ATTR || category === __1_PROP || category === __1_STYLE)
+	{
+		return x.a === y.a && x.b === y.b;
+	}
+	if (category === __1_EVENT)
+	{
+		return x.a === y.a && __Json_equality(x.b, y.b);
+	}
+	if (category === __1_ATTR_NS)
+	{
+		return x.a === y.a && x.b === y.b && x.c === y.c;
+	}
+}
+
+function _VirtualDom_insertFact(fact, diff)
+{
+	var key = _VirtualDom_factToKey(fact);
+	var entry = diff[key];
+	if (!entry)
+	{
+		diff[key] = { $: __5_INSERT, a: fact };
+		return diff;
+	}
+	if (entry.$ === __5_REMOVE)
+	{
+		entry.$ = _VirtualDom_factsEqual(entry.a, fact) ? __5_NO_CHANGE : __5_INSERT;
+	}
+	return diff;
+}
+
+function _VirtualDom_removeFact(fact, diff)
+{
+	var key = _VirtualDom_factToKey(fact);
+	var entry = diff[key];
+	if (!entry)
+	{
+		diff[key] = { $: __5_REMOVE, a: fact };
+		return diff;
+	}
+	if (entry.$ === __5_INSERT && _VirtualDom_factsEqual(entry.a, fact))
+	{
+		entry.$ = __5_NO_CHANGE;
+	}
+	return diff;
+}
+
+function _VirtualDom_factToKey(fact)
+{
+	var tag = fact.$;
+	return (tag === __1_ATTR_NS)
+		? tag + fact.a + fact.b
+		: tag + fact.a;
+}
+
+
+// DIFF KIDS
 
 function _VirtualDom_diffKids(xParent, yParent, patches, rootIndex)
 {
@@ -1251,7 +1174,7 @@ function _VirtualDom_applyPatch(domNode, patch)
 			return _VirtualDom_applyPatchRedraw(domNode, patch.data, patch.eventNode);
 
 		case __3_FACTS:
-			_VirtualDom_applyFacts(domNode, patch.eventNode, patch.data);
+			_VirtualDom_applyFactPatch(domNode, patch.eventNode, patch.data);
 			return domNode;
 
 		case __3_TEXT:
@@ -1331,6 +1254,24 @@ function _VirtualDom_applyPatchRedraw(domNode, vNode, eventNode)
 		parentNode.replaceChild(newNode, domNode);
 	}
 	return newNode;
+}
+
+
+function _VirtualDom_applyFactPatch(domNode, eventNode, diff)
+{
+	for (var key in diff)
+	{
+		var entry = diff[key];
+		var tag = entry.$;
+		if (tag === __5_INSERT)
+		{
+			_VirtualDom_applyFact(domNode, eventNode, entry.a);
+		}
+		else if (tag === __5_REMOVE)
+		{
+			_VirtualDom_deleteFact(domNode, entry.a);
+		}
+	}
 }
 
 
@@ -1501,13 +1442,12 @@ var _VirtualDom_requestAnimationFrame =
 
 function _VirtualDom_renderer(domNode, view)
 {
-	return function(tagger)
+	return function(tagger, nextModel)
 	{
 		var eventNode = { tagger: tagger, parent: undefined };
 		var currNode = virtualize(domNode);
 
 		var state = __4_NO_REQUEST;
-		var nextModel;
 
 		function updateIfNeeded()
 		{
@@ -1533,7 +1473,7 @@ function _VirtualDom_renderer(domNode, view)
 			}
 		}
 
-		return function stepper(model)
+		function stepper(model)
 		{
 			if (state === __4_NO_REQUEST)
 			{
@@ -1542,6 +1482,10 @@ function _VirtualDom_renderer(domNode, view)
 			state = __4_PENDING_REQUEST;
 			nextModel = model;
 		};
+
+		stepper(nextModel);
+
+		return stepper;
 	};
 }
 

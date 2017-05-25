@@ -3,7 +3,7 @@ module VirtualDom exposing
   , text, node, nodeNS
   , Property, property, attribute, attributeNS, mapProperty
   , style
-  , on, onWithOptions, Options, defaultOptions
+  , on, onCustom
   , map
   , lazy, lazy2, lazy3
   , keyedNode, keyedNodeNS
@@ -23,7 +23,7 @@ that expose more helper functions for HTML or SVG.
 @docs style
 
 # Events
-@docs on, onWithOptions, Options, defaultOptions
+@docs on, onCustom
 
 # Routing Messages
 @docs map
@@ -195,22 +195,20 @@ mapProperty =
   Elm.Kernel.VirtualDom.mapProperty
 
 
-{-| Specify a list of styles.
-
-    myStyle : Property msg
-    myStyle =
-      style
-        [ ("backgroundColor", "red")
-        , ("height", "90px")
-        , ("width", "100%")
-        ]
+{-| Specify a style.
 
     greeting : Node msg
     greeting =
-      node "div" [ myStyle ] [ text "Hello!" ]
+      node "div"
+        [ style "backgroundColor" "red"
+        , style "height" "90px"
+        , style "width" "100%"
+        ]
+        [ text "Hello!"
+        ]
 
 -}
-style : List (String, String) -> Property msg
+style : String -> String -> Property msg
 style =
   Elm.Kernel.VirtualDom.style
 
@@ -221,11 +219,11 @@ style =
 
 {-| Create a custom event listener.
 
-    import Json.Decode as Json
+    import Json.Decode as Decode
 
     onClick : msg -> Property msg
     onClick msg =
-      on "click" (Json.succeed msg)
+      on "click" (Decode.succeed msg)
 
 You first specify the name of the event in the same format as with JavaScript’s
 `addEventListener`. Next you give a JSON decoder, which lets you pull
@@ -234,38 +232,28 @@ a message and route it to your `update` function.
 -}
 on : String -> Json.Decoder msg -> Property msg
 on eventName decoder =
-  onWithOptions eventName defaultOptions decoder
+  onCustom eventName (Json.map toDefaultEvent decoder)
 
 
-{-| Same as `on` but you can set a few options.
+{-| Same as `on` but you can customize how the JavaScript event behaves. For example,
+maybe when someone presses the ENTER key, you want to avoid a page scroll. You have
+control over this with:
+
+  - `stopPropagation = True` means the event stops traveling through the DOM. So if
+  propagation of a click is stopped, it will not trigger any other event listeners.
+  - `preventDefault = True` means any built-in browser behavior related to the event
+  is prevented. This is handy with certain key presses or touch gestures.
+
 -}
-onWithOptions : String -> Options -> Json.Decoder msg -> Property msg
-onWithOptions =
+onCustom : String -> Json.Decoder { message : msg, stopPropagation : Bool, preventDefault : Bool } -> Property msg
+onCustom =
   Elm.Kernel.VirtualDom.on
 
 
-{-| Options for an event listener. If `stopPropagation` is true, it means the
-event stops traveling through the DOM so it will not trigger any other event
-listeners. If `preventDefault` is true, any built-in browser behavior related
-to the event is prevented. For example, this is used with touch events when you
-want to treat them as gestures of your own, not as scrolls.
--}
-type alias Options =
-  { stopPropagation : Bool
-  , preventDefault : Bool
-  }
-
-
-{-| Everything is `False` by default.
-
-    defaultOptions =
-        { stopPropagation = False
-        , preventDefault = False
-        }
--}
-defaultOptions : Options
-defaultOptions =
-  { stopPropagation = False
+toDefaultEvent : msg -> { message : msg, stopPropagation : Bool, preventDefault : Bool }
+toDefaultEvent message =
+  { message = message
+  , stopPropagation = False
   , preventDefault = False
   }
 
