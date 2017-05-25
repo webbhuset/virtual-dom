@@ -396,7 +396,6 @@ function _VirtualDom_makeEventHandler(eventNode, initialDecoder)
 			}
 
 			var message = record.message;
-			console.log(message);
 			var currentEventNode = eventNode;
 			while (currentEventNode)
 			{
