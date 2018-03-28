@@ -57,8 +57,8 @@ a list of child nodes.
         [ text "Hello!" ]
 -}
 node : String -> List (Attribute msg) -> List (Node msg) -> Node msg
-node =
-  Elm.Kernel.VirtualDom.node
+node tag =
+  Elm.Kernel.VirtualDom.node (Elm.Kernel.VirtualDom.toSafeTag tag)
 
 
 {-| Create a namespaced DOM node. For example, an SVG `<path>` node could be
@@ -69,8 +69,8 @@ defined like this:
       nodeNS "http://www.w3.org/2000/svg" "path" attributes children
 -}
 nodeNS : String -> String -> List (Attribute msg) -> List (Node msg) -> Node msg
-nodeNS =
-  Elm.Kernel.VirtualDom.nodeNS
+nodeNS namespace tag =
+  Elm.Kernel.VirtualDom.nodeNS namespace (Elm.Kernel.VirtualDom.toSafeTag tag)
 
 
 {-| Just put plain text in the DOM. It will escape the string so that it appears
@@ -162,8 +162,8 @@ Notice that you must give the *property* name, so we use `htmlFor` as it
 would be in JavaScript, not `for` as it would appear in HTML.
 -}
 property : String -> Json.Value -> Attribute msg
-property =
-  Elm.Kernel.VirtualDom.property
+property key value =
+  Elm.Kernel.VirtualDom.property (Elm.Kernel.VirtualDom.toSafeKey key) (Elm.Kernel.VirtualDom.toSafeValue value)
 
 
 {-| Create an attribute. This uses JavaScript’s `setAttribute` function
@@ -177,8 +177,8 @@ Notice that you must give the *attribute* name, so we use `for` as it would
 be in HTML, not `htmlFor` as it would appear in JS.
 -}
 attribute : String -> String -> Attribute msg
-attribute =
-  Elm.Kernel.VirtualDom.attribute
+attribute key value =
+  Elm.Kernel.VirtualDom.attribute (Elm.Kernel.VirtualDom.toSafeKey key) (Elm.Kernel.VirtualDom.toSafeValue value)
 
 
 {-| Would you believe that there is another way to do this?! This uses
@@ -192,8 +192,8 @@ like this:
       attributeNS "http://www.w3.org/1999/xlink" "xlink:href" value
 -}
 attributeNS : String -> String -> String -> Attribute msg
-attributeNS =
-  Elm.Kernel.VirtualDom.attributeNS
+attributeNS key value =
+  Elm.Kernel.VirtualDom.attributeNS (Elm.Kernel.VirtualDom.toSafeKey key) (Elm.Kernel.VirtualDom.toSafeValue value)
 
 
 {-| Transform the messages produced by a `Attribute`.

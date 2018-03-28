@@ -56,7 +56,7 @@ var _VirtualDom_nodeNS = F2(function(namespace, tag)
 
 		return {
 			$: __2_NODE,
-			__tag: tag == 'script' ? 'p' : tag,
+			__tag: tag,
 			__facts: _VirtualDom_organizeFacts(factList),
 			__kids: kids,
 			__namespace: namespace,
@@ -87,7 +87,7 @@ var _VirtualDom_keyedNodeNS = F2(function(namespace, tag)
 
 		return {
 			$: __2_KEYED_NODE,
-			__tag: tag == 'script' ? 'p' : tag,
+			__tag: tag,
 			__facts: _VirtualDom_organizeFacts(factList),
 			__kids: kids,
 			__namespace: namespace,
@@ -226,43 +226,63 @@ var _VirtualDom_property = F2(function(key, value)
 {
 	return {
 		$: 'a__1_PROP',
-		__key: _VirtualDom_toSafeKey(key),
-		__value: _VirtualDom_toSafeValue(value)
+		__key: key,
+		__value: value
 	};
 });
 var _VirtualDom_attribute = F2(function(key, value)
 {
 	return {
 		$: 'a__1_ATTR',
-		__key: _VirtualDom_toSafeKey(key),
-		__value: _VirtualDom_toSafeValue(value)
+		__key: key,
+		__value: value
 	};
 });
 var _VirtualDom_attributeNS = F3(function(namespace, key, value)
 {
 	return {
 		$: 'a__1_ATTR_NS',
-		__key: _VirtualDom_toSafeKey(key),
-		__value: { __namespace: namespace, __value: _VirtualDom_toSafeValue(value) }
+		__key: key,
+		__value: { __namespace: namespace, __value: value }
 	};
 });
 
+
+
+// CLOSE XSS ATTACK VECTORS
+//
+// Based on:
+//   https://www.owasp.org/index.php/XSS_Filter_Evasion_Cheat_Sheet
+//   https://html5sec.org/
+//
+// Called from Elm in strategic places to minimize the performance overhead.
+//
+
+function _VirtualDom_toSafeTag(tag)
+{
+	return /^(script|iframe|base|object|meta|title)$/i.test(tag) ? 'span' : tag;
+}
+
 function _VirtualDom_toSafeKey(key)
 {
-	return (key[0] == 'o' && key[1] == 'n' || key == 'innerHTML') ? 'data-' + key : key;
+	return (/^on/i.test(key) || key == 'innerHTML') ? 'data-' + key : key;
 }
 
 function _VirtualDom_toSafeValue__PROD(value)
 {
-	return value.indexOf('javascript:') == 0 ? '' : value;
+	return /^\s*(javascript:|data:text\/html)/i.test(value) ? '' : value;
 }
 
 function _VirtualDom_toSafeValue__DEBUG(value)
 {
-	return value.indexOf('javascript:') == 0
-		? 'javascript:alert("This is an XSS vector. Please use ports or web components instead.")'
+	return /^\s*javascript:/i.test(value)
+		? 'javascript:alert("This is an XSS vector. Instead use ports, web components, etc.")'
+		:
+	/^\s*data:text\/html/i.test(value)
+		? 'data:text/html embedding HTML like this is an XSS vector. Instead use ports, web components, etc.'
 		: value;
 }
+
 
 
 // MAP FACTS
