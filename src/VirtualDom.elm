@@ -5,7 +5,7 @@ module VirtualDom exposing
   , style
   , on, onWithOptions, Options, defaultOptions
   , map
-  , lazy, lazy2, lazy3
+  , lazy, lazy2, lazy3, lazy4, lazy5, lazy6, lazy7, lazy8
   , keyedNode
   , program, programWithFlags
   )
@@ -29,7 +29,7 @@ that expose more helper functions for HTML or SVG.
 @docs map
 
 # Optimizations
-@docs lazy, lazy2, lazy3, keyedNode
+@docs lazy, lazy2, lazy3, lazy4, lazy5, lazy6, lazy7, lazy8, keyedNode
 
 # Programs
 @docs program, programWithFlags
@@ -282,6 +282,41 @@ lazy2 =
 lazy3 : (a -> b -> c -> Node msg) -> a -> b -> c -> Node msg
 lazy3 =
   Native.VirtualDom.lazy3
+
+
+{-| Same as `lazy` but checks on four arguments.
+-}
+lazy4 : (a -> b -> c -> d -> Node msg) -> a -> b -> c -> d -> Node msg
+lazy4 =
+  Native.VirtualDom.lazy4
+
+
+{-| Same as `lazy` but checks on 5 arguments.
+-}
+lazy5 : (a -> b -> c -> d -> e -> Node msg) -> a -> b -> c -> d -> e -> Node msg
+lazy5 =
+  Native.VirtualDom.lazy5
+
+
+{-| Same as `lazy` but checks on 6 arguments.
+-}
+lazy6 : (a -> b -> c -> d -> e -> f -> Node msg) -> a -> b -> c -> d -> e -> f -> Node msg
+lazy6 =
+  Native.VirtualDom.lazy6
+
+
+{-| Same as `lazy` but checks on 7 arguments.
+-}
+lazy7 : (a -> b -> c -> d -> e -> f -> g -> Node msg) -> a -> b -> c -> d -> e -> f -> g -> Node msg
+lazy7 =
+  Native.VirtualDom.lazy7
+
+
+{-| Same as `lazy` but checks on 8 arguments.
+-}
+lazy8 : (a -> b -> c -> d -> e -> f -> g -> h -> Node msg) -> a -> b -> c -> d -> e -> f -> g -> h -> Node msg
+lazy8 =
+  Native.VirtualDom.lazy8
 
 
 {-| Works just like `node`, but you add a unique identifier to each child
