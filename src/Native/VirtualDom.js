@@ -573,7 +573,7 @@ function diffHelp(a, b, patches, index)
 			var aArgs = a.args;
 			var bArgs = b.args;
 			var i = aArgs.length;
-			var same = a.func === b.func && i === bArgs.length;
+			var same = i === bArgs.length;
 			while (same && i--)
 			{
 				same = aArgs[i] === bArgs[i];
