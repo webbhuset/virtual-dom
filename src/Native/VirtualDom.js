@@ -1611,6 +1611,9 @@ function makeStepper(domNode, view, initialVirtualNode, eventNode)
 	{
 		if (state === 'NO_REQUEST')
 		{
+			if (model === nextModel) {
+				return;
+			}
 			rAF(updateIfNeeded);
 		}
 		state = 'PENDING_REQUEST';
